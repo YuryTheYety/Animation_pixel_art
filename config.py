@@ -107,6 +107,11 @@ TOTAL_STEPS = 100_000
 OVERFIT_NUM_CHARACTERS = 20  # jalon 3 : overfit volontaire
 
 # ~10 min de checkpoint : a ajuster selon la vitesse mesuree sur T4.
+# Les deux triggers sont actifs en meme temps (le premier declenche) : le
+# nombre de steps est une premiere approximation, le temps ecoule est le
+# filet de securite qui garantit le "~10 min" quelle que soit la vitesse
+# reelle du hardware.
 CHECKPOINT_EVERY_STEPS = 500
+CHECKPOINT_EVERY_SECONDS = 600
 
 SEED = 42
