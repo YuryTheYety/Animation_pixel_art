@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Donnees pretraitees / checkpoints : vivent sur Google Drive, pas dans le repo.
+/data/
