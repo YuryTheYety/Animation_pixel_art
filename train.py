@@ -173,6 +173,10 @@ def train(args):
     D.train()
     data_iter = iter(loader)
     t0 = time.time()
+    first_step = step  # premiere step de CE run (utile apres une reprise)
+
+    print("Chargement du premier batch... (peut prendre du temps la premiere "
+          "fois : lecture depuis Drive de plusieurs personnages)")
 
     while step < total_steps:
         try:
@@ -215,8 +219,8 @@ def train(args):
         running_g_adv += loss_g_adv.item()
         running_d += loss_d.item()
 
-        if step % log_every == 0:
-            n = log_every
+        if step % log_every == 0 or step == first_step + 1:
+            n = step - first_step if step == first_step + 1 else log_every
             elapsed = time.time() - t0
             print(f"step {step}/{total_steps}  L1={running_l1/n:.4f}  "
                   f"G_adv={running_g_adv/n:.4f}  D={running_d/n:.4f}  "
