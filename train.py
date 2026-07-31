@@ -161,6 +161,17 @@ def train(args):
         )
         print(f"Reprise depuis {config.LAST_CHECKPOINT_PATH} : step={step}, "
               f"best_score={best_score:.4f}")
+    elif args.init_from:
+        # Warm-start (fine-tuning) : ne charge QUE les poids du generateur
+        # depuis un checkpoint externe (ex: le modele entraine sur LPC).
+        # D, optimizers, step et best_score repartent a zero -- ce n'est
+        # pas une reprise, c'est un nouveau run qui demarre d'un meilleur
+        # point que l'initialisation aleatoire. Ignore si un checkpoint
+        # local existe deja (le resume-first a priorite absolue).
+        init_ckpt = torch.load(args.init_from, map_location=device, weights_only=False)
+        G.load_state_dict(init_ckpt["generator"])
+        print(f"Demarrage a chaud depuis {args.init_from} (generateur uniquement, "
+              f"step={init_ckpt.get('step')}) -- D/optimizers/step repartent a zero.")
     else:
         print("Pas de checkpoint existant (ou --no-resume) : depart a zero.")
 
@@ -267,6 +278,10 @@ def main():
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--no-resume", action="store_true",
                          help="Ignore le checkpoint existant et repart a zero.")
+    parser.add_argument("--init-from", type=str, default=None,
+                         help="Fine-tuning : demarre avec les poids du generateur "
+                              "de ce checkpoint (ex: best.pt du run LPC) si aucun "
+                              "checkpoint local n'existe. Ignore si resume actif.")
     args = parser.parse_args()
     train(args)
 

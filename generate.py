@@ -85,10 +85,13 @@ def list_rows(manifest):
     by_row = {}
     for r, c in all_coords:
         by_row.setdefault(r, []).append(c)
+    row_labels = manifest.get("row_labels", {})
     print(f"{len(by_row)} lignes (animations/directions) disponibles :")
     for row in sorted(by_row):
         cols = sorted(by_row[row])
-        print(f"  row={row:<3} {len(cols)} frames  cols={cols}")
+        label = row_labels.get(str(row))
+        label_str = f"  [{label}]" if label else ""
+        print(f"  row={row:<3} {len(cols)} frames  cols={cols}{label_str}")
 
 
 def animation_coords(row, manifest):
