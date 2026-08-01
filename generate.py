@@ -15,6 +15,13 @@ Usage:
     # generateur reste calibre sur la distribution LPC / celle du
     # fine-tuning eventuel)
     python generate.py --reference-image mon_sprite.png --row 0 --out anim.gif
+
+    # composer une couche (cheveux, vetements...) par-dessus le corps genere.
+    # Le dossier d'overlay doit suivre la meme structure que le personnage
+    # source du fine-tuning (rotations/<dir>.png + animations/<anim>/<dir>/
+    # frame_NNN.png), dessine pose par pose pour suivre le mouvement du corps
+    # -- aucun apprentissage necessaire, pur compositing alpha.
+    python generate.py --character-id rouge_brique --row 20 --overlay mes_cheveux/ --out anim.gif
 """
 import argparse
 import json
@@ -28,6 +35,7 @@ import config
 from models import UNetGenerator
 from sanity_check import composite_on_checkerboard, tensor_to_pil_rgba
 from train import get_device
+from data_prep_style import build_grid
 
 
 def load_manifest():
@@ -102,6 +110,49 @@ def animation_coords(row, manifest):
     return [(row, c) for c in coords]
 
 
+def load_overlay_grid(overlay_dir):
+    """Reutilise la meme logique de grille que data_prep_style.py : si le
+    dossier d'overlay a la meme structure (rotations/ + animations/), les
+    coordonnees (row,col) tombent naturellement sur les memes poses."""
+    _, coord_to_path, _, _ = build_grid(overlay_dir)
+    return coord_to_path
+
+
+def composite_overlay(body_tensor, overlay_dir, coord_to_path, coord):
+    """Colle la frame d'overlay correspondant a cette pose par-dessus le
+    corps genere (alpha compositing simple, aucun apprentissage). Renvoie
+    le corps tel quel si l'overlay n'a pas de frame pour cette pose."""
+    if coord not in coord_to_path:
+        return body_tensor, False
+    overlay_path = os.path.join(overlay_dir, coord_to_path[coord])
+    overlay_img = Image.open(overlay_path).convert("RGBA")
+    if overlay_img.size != (config.FRAME_SIZE, config.FRAME_SIZE):
+        overlay_img = overlay_img.resize((config.FRAME_SIZE, config.FRAME_SIZE), Image.NEAREST)
+    body_img = tensor_to_pil_rgba(body_tensor)
+    body_img.alpha_composite(overlay_img)
+    arr = np.asarray(body_img, dtype=np.float32) / 255.0
+    return torch.from_numpy(arr).permute(2, 0, 1).contiguous(), True
+
+
+def apply_overlay(frames, coords, overlay_dir):
+    coord_to_path = load_overlay_grid(overlay_dir)
+    composited, n_hit = [], 0
+    for frame, coord in zip(frames, coords):
+        new_frame, hit = composite_overlay(frame, overlay_dir, coord_to_path, coord)
+        composited.append(new_frame)
+        n_hit += hit
+    if n_hit == 0:
+        print(f"[!] Aucune frame d'overlay trouvee pour ces poses dans {overlay_dir} "
+              f"-- verifier que sa structure de dossiers correspond a celle du "
+              f"personnage source (rotations/ + animations/<anim>/<direction>/).")
+    elif n_hit < len(frames):
+        print(f"[!] Overlay applique sur {n_hit}/{len(frames)} frames seulement "
+              f"(poses manquantes dans {overlay_dir}).")
+    else:
+        print(f"Overlay applique sur les {n_hit} frames.")
+    return composited
+
+
 def generate_sequence(G, pose_maps, reference, coords, device):
     frames = []
     with torch.no_grad():
@@ -146,6 +197,10 @@ def main():
                          help="Liste les lignes/animations disponibles et sort.")
     parser.add_argument("--out", type=str, default=None,
                          help="Chemin de sortie .gif (apercu) ou .png (planche native).")
+    parser.add_argument("--overlay", type=str, default=None,
+                         help="Dossier d'une couche (cheveux, vetements...) a composer "
+                              "par-dessus le corps genere, meme structure que le "
+                              "personnage source (rotations/ + animations/).")
     parser.add_argument("--device", type=str, default=None)
     args = parser.parse_args()
 
@@ -176,6 +231,9 @@ def main():
     coords = animation_coords(args.row, manifest)
     print(f"Animation ligne {args.row} : {len(coords)} frames.")
     frames = generate_sequence(G, pose_maps, reference, coords, device)
+
+    if args.overlay:
+        frames = apply_overlay(frames, coords, args.overlay)
 
     out = args.out or os.path.join(config.PREPARED_DIR, f"generated_row{args.row}.gif")
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
